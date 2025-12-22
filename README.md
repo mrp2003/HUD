@@ -38,10 +38,55 @@ cd android && ./gradlew assembleRelease
 
 ## Project Status
 
-- [ ] Environment setup
-- [ ] React Native initialization
+- [x] Environment setup
+- [x] React Native initialization
 - [ ] Navigation implementation
 - [ ] OBD2 Bluetooth
 - [ ] HUD UI
 - [ ] Web control interface
 - [ ] APK build and testing
+
+## Project Structure
+
+```
+HUD/
+├── HUDApp/               # React Native application
+│   ├── android/          # Android native code
+│   ├── App.tsx           # Main app component
+│   └── package.json      # Dependencies
+├── android-env.sh        # Environment configuration
+├── setup-android-sdk.sh  # SDK setup script
+└── README.md             # This file
+```
+
+## Setup Instructions
+
+### 1. Environment Setup
+
+```bash
+# Load environment variables
+source android-env.sh
+
+# Verify setup
+java -version    # Should show Java 17+
+sdkmanager --version
+```
+
+### 2. Running the App
+
+```bash
+cd HUDApp
+
+# Run on connected device/emulator
+npx react-native run-android
+```
+
+### 3. Building APK
+
+```bash
+cd HUDApp/android
+./gradlew assembleRelease
+
+# APK will be at:
+# android/app/build/outputs/apk/release/app-release.apk
+```
