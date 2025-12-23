@@ -15,9 +15,14 @@ android/local.properties
 ios/Pods/
 ios/build/
 
-# Environment
+# Environment - NEVER commit credentials!
 .env
 .env.local
+.env.*.local
+.env.development
+.env.production
+HUDApp/.env
+HUDApp/.env.local
 
 # IDE
 .vscode/
