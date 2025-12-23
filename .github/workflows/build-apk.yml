@@ -26,13 +26,19 @@ jobs:
 
     - name: Install dependencies
       working-directory: ./HUDApp
-      run: npm ci
+      run: |
+        rm -rf node_modules
+        npm install
 
-    - name: Build debug APK
+    - name: Clean Android build
       working-directory: ./HUDApp/android
       run: |
         chmod +x gradlew
-        ./gradlew assembleDebug --no-daemon --max-workers=2
+        ./gradlew clean --no-daemon
+
+    - name: Build debug APK
+      working-directory: ./HUDApp/android
+      run: ./gradlew assembleDebug --no-daemon --max-workers=2
 
     - name: Upload APK
       uses: actions/upload-artifact@v4
