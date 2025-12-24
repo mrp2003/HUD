@@ -84,10 +84,6 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
-
-        // HERE SDK requires this
-        manifestPlaceholders = [HERE_SDK_ACCESS_KEY_ID: System.getenv("HERE_SDK_ACCESS_KEY_ID") ?: ""]
-        manifestPlaceholders = [HERE_SDK_ACCESS_KEY_SECRET: System.getenv("HERE_SDK_ACCESS_KEY_SECRET") ?: ""]
     }
 
     // Enable Java 8+ features
@@ -120,10 +116,6 @@ android {
 repositories {
     google()
     mavenCentral()
-    // HERE SDK repository
-    maven {
-        url 'https://repo.here.com/artifactory/open-location-platform/'
-    }
 }
 
 dependencies {
@@ -135,7 +127,4 @@ dependencies {
     } else {
         implementation jscFlavor
     }
-
-    // HERE SDK Lite (includes lane guidance)
-    implementation 'com.here.sdk:sdk-navigation:4.21.0.0'
 }

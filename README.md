@@ -1,143 +1,174 @@
-# Custom Car HUD App
+# HUD - Custom Car Heads-Up Display
 
-A minimalist heads-up display app for Android tablets that provides:
-- Simplified turn-by-turn navigation with lane guidance
-- Real-time speed display via OBD2 Bluetooth connection
-- Offline maps support
-- Remote control via web interface (accessible from iPhone)
-- Windshield reflection mode
+Open-source Android HUD app with lane-by-lane navigation guidance using OpenStreetMap and OSRM.
 
-## Architecture
+## Features
 
-- **Display App**: Android tablet app (React Native + TypeScript)
-- **Remote Control**: Web interface accessible via local network
-- **Navigation**: HERE Maps API v8 (routing) + MapLibre (rendering)
-- **Offline Maps**: HERE Vector Tiles cached locally
-- **Speed Data**: OBD2 Bluetooth connection (ELM327)
-- **Connectivity**: WiFi Direct for phone-to-tablet control
+- 🚗 **Real-time speed display** from OBD2 Bluetooth
+- 🧭 **Turn-by-turn navigation** with OSRM
+- 🛣️ **Lane-by-lane guidance** showing which lanes to be in
+- 📱 **Remote control** from iPhone via web interface
+- 🔄 **Display flip mode** for windshield projection
+- 🆓 **100% FREE** - No API costs, no limits
 
-## Tech Stack
+## Technology Stack
 
-- **Frontend**: React Native 0.83.1 with TypeScript
-- **Maps**: MapLibre GL Native + HERE Vector Tiles
-- **Navigation**: HERE Routing API v8 (20-30 MB/year data usage)
-- **Offline Tiles**: ~350 MB one-time download for UAE region
-- **OBD2**: Bluetooth Low Energy (react-native-ble-plx)
-- **Web Server**: Express.js (local control interface)
+- **Frontend**: React Native 0.83.1 (TypeScript)
+- **Routing**: OSRM (Open Source Routing Machine)
+- **Map Data**: OpenStreetMap
+- **Platform**: Android 9+ (Huawei MediaPad M5 2560x1600)
+- **Build**: GitHub Actions (cloud APK builds)
 
-## Development
+## Quick Start
 
-All development is done via command line - no Android Studio required.
-
-### Build Commands
+### 1. Clone Repository
 
 ```bash
-# Run on device
-npx react-native run-android
-
-# Build APK
-cd android && ./gradlew assembleRelease
+git clone https://github.com/yourusername/HUD.git
+cd HUD/HUDApp
 ```
 
-## Project Status
+### 2. Install Dependencies
 
-- [x] Android SDK setup (command-line only)
-- [x] React Native project initialization
-- [x] HUD UI design and implementation
-- [x] GitHub Actions for cloud APK building
-- [x] Initial APK build and tablet testing
-- [x] HERE Maps integration architecture
-- [ ] HERE API key configuration
-- [ ] Navigation implementation (HERE + MapLibre)
-- [ ] Offline tile download (UAE/Dubai region)
-- [ ] OBD2 Bluetooth connection
-- [ ] Web control interface
-- [ ] Display flip mode
+```bash
+npm install
+```
+
+### 3. Set Up OSRM Server
+
+Follow the complete guide: [docs/OSRM_SETUP.md](docs/OSRM_SETUP.md)
+
+Quick version:
+```bash
+# Download Dubai OSM data
+wget http://download.geofabrik.de/asia/united-arab-emirates-latest.osm.pbf
+
+# Run OSRM server with Docker
+docker run -t -i -p 5000:5000 -v $(pwd):/data ghcr.io/project-osrm/osrm-backend osrm-routed --algorithm mld /data/united-arab-emirates-latest.osrm
+```
+
+### 4. Configure Environment
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Set OSRM server URL:
+```
+OSRM_SERVER_URL=http://localhost:5000
+```
+
+### 5. Build APK
+
+**Cloud build** (recommended):
+```bash
+git add .
+git commit -m "Ready to build"
+git push origin main
+```
+
+GitHub Actions will build APK automatically. Download from Actions tab.
+
+**Local build**:
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+APK location: `android/app/build/outputs/apk/release/app-release.apk`
 
 ## Project Structure
 
 ```
 HUD/
-├── HUDApp/                        # React Native application
+├── HUDApp/                    # React Native app
 │   ├── src/
-│   │   ├── components/            # HUD UI components
-│   │   │   ├── SpeedDisplay.tsx   # Speed + limit warning
-│   │   │   ├── TurnInfo.tsx       # Turn arrows + street
-│   │   │   ├── TimeRemaining.tsx  # ETA display
-│   │   │   ├── LaneGuidance.tsx   # Lane arrows
-│   │   │   └── MapView.tsx        # MapLibre map
-│   │   ├── screens/
-│   │   │   └── HUDScreen.tsx      # Main HUD layout
-│   │   ├── services/
-│   │   │   ├── HereApiService.ts  # HERE API client
-│   │   │   └── TileCacheService.ts # Offline tiles
-│   │   ├── hooks/
-│   │   │   └── useNavigation.ts   # Navigation state
-│   │   ├── config/
-│   │   │   └── here.config.ts     # API configuration
-│   │   └── types/
-│   │       └── navigation.ts      # TypeScript types
-│   ├── android/                   # Android native code
-│   ├── App.tsx                    # Main app entry
-│   ├── package.json               # Dependencies
-│   └── HERE_SETUP.md              # Setup guide
-├── .github/workflows/
-│   └── build-apk.yml              # Cloud APK building
-├── android-env.sh                 # Environment config
-└── README.md                      # This file
+│   │   ├── components/        # HUD UI components
+│   │   ├── services/          # OSRM, OBD2 services
+│   │   ├── config/            # Navigation config
+│   │   └── screens/           # App screens
+│   ├── android/               # Android native code
+│   └── scripts/               # Utility scripts
+├── docs/                      # Documentation
+│   └── OSRM_SETUP.md         # OSRM setup guide
+└── README.md                  # This file
 ```
 
-## Setup Instructions
+## Lane Guidance Coverage
 
-### 1. Environment Setup
+Based on Dubai testing (December 2024):
 
-```bash
-# Load environment variables
-source android-env.sh
+- **Sheikh Zayed Road**: 17.3% coverage ✅
+- **Major highways**: Good coverage ✅
+- **Residential areas**: Limited coverage ⚠️
 
-# Verify setup
-java -version    # Should show Java 17+
-sdkmanager --version
-```
+**Graceful fallback**: HUD shows basic turn arrows when lane data unavailable.
 
-### 2. Running the App
+## Development
+
+### Test OSM Lane Coverage
 
 ```bash
 cd HUDApp
-
-# Run on connected device/emulator
-npx react-native run-android
+node scripts/test-osm-lane-coverage.js
 ```
 
-### 3. HERE Maps Setup
+This tests lane data availability in Dubai areas.
 
-See [HERE_SETUP.md](HUDApp/HERE_SETUP.md) for detailed instructions.
+### Run on Emulator
 
-Quick start:
-1. Get API key from https://developer.here.com
-2. Update `HUDApp/src/config/here.config.ts` with your key
-3. Run `npm install` in HUDApp directory
-
-### 4. Building APK
-
-**Option 1: GitHub Actions (Recommended)**
-- Push changes to GitHub
-- Actions will build APK automatically
-- Download from Actions artifacts
-
-**Option 2: Local Build**
 ```bash
-cd HUDApp/android
-./gradlew assembleRelease
-
-# APK will be at:
-# android/app/build/outputs/apk/release/app-release.apk
+npm start
+# In another terminal
+npm run android
 ```
 
-## Data Usage
+### Build Release APK
 
-With HERE Maps navigation:
-- **One-time**: 350 MB (offline tiles on WiFi)
-- **Monthly**: ~2 MB (routing API calls)
-- **Yearly**: ~25 MB total
-- **Percentage**: 0.1% of 2GB monthly data plan
+```bash
+cd android
+./gradlew assembleRelease
+```
+
+## Contributing
+
+This is an open-source project. Contributions welcome!
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to branch (`git push origin feature/AmazingFeature`)
+5. Open Pull Request
+
+## Roadmap
+
+- [x] HUD interface design
+- [x] OSRM integration
+- [x] Lane guidance service
+- [ ] Lane guidance UI component
+- [ ] OBD2 Bluetooth integration
+- [ ] Remote control web server
+- [ ] Display flip mode
+- [ ] Production testing
+
+## License
+
+MIT License - Free to use, modify, and distribute.
+
+## Acknowledgments
+
+- **OpenStreetMap** contributors for map data
+- **OSRM** project for routing engine
+- **React Native** community
+- Dubai OSM mapping community
+
+## Support
+
+For issues or questions:
+- Open an issue on GitHub
+- Check [docs/OSRM_SETUP.md](docs/OSRM_SETUP.md) for setup help
+
+---
+
+**Built with ❤️ for safe driving**
