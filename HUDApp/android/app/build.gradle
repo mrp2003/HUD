@@ -84,6 +84,16 @@ android {
         targetSdkVersion rootProject.ext.targetSdkVersion
         versionCode 1
         versionName "1.0"
+
+        // HERE SDK requires this
+        manifestPlaceholders = [HERE_SDK_ACCESS_KEY_ID: System.getenv("HERE_SDK_ACCESS_KEY_ID") ?: ""]
+        manifestPlaceholders = [HERE_SDK_ACCESS_KEY_SECRET: System.getenv("HERE_SDK_ACCESS_KEY_SECRET") ?: ""]
+    }
+
+    // Enable Java 8+ features
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
     signingConfigs {
         debug {
@@ -107,6 +117,15 @@ android {
     }
 }
 
+repositories {
+    google()
+    mavenCentral()
+    // HERE SDK repository
+    maven {
+        url 'https://repo.here.com/artifactory/open-location-platform/'
+    }
+}
+
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
@@ -116,4 +135,7 @@ dependencies {
     } else {
         implementation jscFlavor
     }
+
+    // HERE SDK Lite (includes lane guidance)
+    implementation 'com.here.sdk:sdk-navigation:4.21.0.0'
 }
