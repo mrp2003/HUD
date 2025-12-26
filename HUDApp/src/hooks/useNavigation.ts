@@ -202,7 +202,7 @@ export function useNavigation(): UseNavigationReturn {
         (resolve, reject) => {
           Geolocation.getCurrentPosition(resolve, reject, {
             enableHighAccuracy: true,
-            timeout: 15000,
+            timeout: 60000, // 60 seconds for GPS acquisition (cold start can take 30+ seconds)
           });
         },
       );
@@ -233,9 +233,27 @@ export function useNavigation(): UseNavigationReturn {
       destinationRef.current = destination;
     } catch (error) {
       console.error('Navigation start error:', error);
+
+      // Provide more specific error messages
+      let errorMessage = 'Failed to start navigation';
+      if (error && typeof error === 'object' && 'code' in error) {
+        const gpsError = error as {code: number; message: string};
+        if (gpsError.code === 3) {
+          errorMessage = 'GPS signal timeout. Please ensure you have a clear view of the sky and try again.';
+        } else if (gpsError.code === 1) {
+          errorMessage = 'Location permission denied. Please enable location access in settings.';
+        } else if (gpsError.code === 2) {
+          errorMessage = 'GPS position unavailable. Please check if location services are enabled.';
+        } else {
+          errorMessage = gpsError.message || errorMessage;
+        }
+      } else if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
       setState(prev => ({
         ...prev,
-        error: error instanceof Error ? error.message : 'Failed to start navigation',
+        error: errorMessage,
       }));
     }
   };

@@ -35,7 +35,6 @@ export const HUDScreen: React.FC = () => {
   if (navigation.error) {
     return (
       <View style={styles.container}>
-        <StatusBar hidden />
         <View style={styles.errorContainer}>
           <Text style={styles.errorText}>Error: {navigation.error}</Text>
           <Text style={styles.errorSubtext}>Check GPS and OSRM server</Text>
@@ -47,7 +46,6 @@ export const HUDScreen: React.FC = () => {
   if (!navigation.isNavigating || !navigation.currentStep) {
     return (
       <View style={styles.container}>
-        <StatusBar hidden />
         <View style={styles.loadingContainer}>
           <Text style={styles.loadingText}>Starting navigation...</Text>
           <Text style={styles.loadingSubtext}>Getting GPS location</Text>
@@ -67,7 +65,6 @@ export const HUDScreen: React.FC = () => {
 
   return (
     <View style={styles.container}>
-      <StatusBar hidden />
 
       {/* Top Row */}
       <View style={styles.topRow}>
