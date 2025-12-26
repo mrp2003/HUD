@@ -1,120 +1,308 @@
 /**
- * Navigation Hook
- * Manages navigation state and updates HUD display
+ * useNavigation Hook
+ *
+ * Manages navigation state with OSRM integration
+ * Handles GPS tracking, distance calculation, and route updates
  */
 
-import {useState, useEffect, useCallback} from 'react';
-import {hereApiService, RouteRequest} from '../services/HereApiService';
-import type {NavigationData} from '../types/navigation';
+import {useState, useEffect, useRef} from 'react';
+import Geolocation from '@react-native-community/geolocation';
+import {osrmService, Coordinate, RouteStep, Route} from '../services/OSRMService';
+import {LaneData} from '../components/LaneGuidance';
 
-export interface NavigationState {
+interface NavigationState {
+  currentLocation: Coordinate | null;
+  currentSpeed: number; // km/h - will be from OBD2 later
+  route: Route | null;
+  currentStepIndex: number;
+  currentStep: RouteStep | null;
+  distanceToNextManeuver: number; // meters
+  totalDistanceRemaining: number; // meters
+  totalTimeRemaining: number; // seconds
+  lanes: LaneData[] | null;
   isNavigating: boolean;
-  navigationData: NavigationData | null;
-  currentLocation: {lat: number; lng: number} | null;
-  destination: {lat: number; lng: number} | null;
   error: string | null;
 }
 
-export interface UseNavigationReturn extends NavigationState {
-  startNavigation: (destination: {lat: number; lng: number}) => Promise<void>;
+interface UseNavigationReturn extends NavigationState {
+  startNavigation: (destination: Coordinate) => Promise<void>;
   stopNavigation: () => void;
-  updateCurrentSpeed: (speed: number) => void;
-  updateLocation: (location: {lat: number; lng: number}) => void;
+  recalculateRoute: () => Promise<void>;
+}
+
+/**
+ * Calculate distance between two coordinates using Haversine formula
+ */
+function calculateDistance(
+  coord1: Coordinate,
+  coord2: Coordinate,
+): number {
+  const R = 6371e3; // Earth's radius in meters
+  const φ1 = (coord1.latitude * Math.PI) / 180;
+  const φ2 = (coord2.latitude * Math.PI) / 180;
+  const Δφ = ((coord2.latitude - coord1.latitude) * Math.PI) / 180;
+  const Δλ = ((coord2.longitude - coord1.longitude) * Math.PI) / 180;
+
+  const a =
+    Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+    Math.cos(φ1) * Math.cos(φ2) * Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+  return R * c; // Distance in meters
+}
+
+/**
+ * Map OSRM maneuver types to turn directions
+ */
+export function mapManeuverToDirection(
+  maneuverType: string,
+  modifier?: string,
+): 'left' | 'right' | 'straight' | 'slight-left' | 'slight-right' | 'sharp-left' | 'sharp-right' | 'u-turn' {
+  if (modifier === 'uturn') return 'u-turn';
+
+  if (modifier === 'sharp left') return 'sharp-left';
+  if (modifier === 'sharp right') return 'sharp-right';
+  if (modifier === 'slight left') return 'slight-left';
+  if (modifier === 'slight right') return 'slight-right';
+  if (modifier === 'left') return 'left';
+  if (modifier === 'right') return 'right';
+
+  return 'straight';
 }
 
 export function useNavigation(): UseNavigationReturn {
   const [state, setState] = useState<NavigationState>({
-    isNavigating: false,
-    navigationData: null,
     currentLocation: null,
-    destination: null,
+    currentSpeed: 0,
+    route: null,
+    currentStepIndex: 0,
+    currentStep: null,
+    distanceToNextManeuver: 0,
+    totalDistanceRemaining: 0,
+    totalTimeRemaining: 0,
+    lanes: null,
+    isNavigating: false,
     error: null,
   });
+
+  const destinationRef = useRef<Coordinate | null>(null);
+  const watchIdRef = useRef<number | null>(null);
+
+  /**
+   * Start GPS location tracking
+   */
+  useEffect(() => {
+    if (!state.isNavigating) return;
+
+    // Watch position with high accuracy
+    const watchId = Geolocation.watchPosition(
+      position => {
+        const location: Coordinate = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+        };
+
+        // Update current speed (from GPS for now, OBD2 later)
+        const gpsSpeed = position.coords.speed
+          ? (position.coords.speed * 3.6) // Convert m/s to km/h
+          : 0;
+
+        setState(prev => ({
+          ...prev,
+          currentLocation: location,
+          currentSpeed: Math.max(gpsSpeed, prev.currentSpeed), // Prevent negative speeds
+        }));
+      },
+      error => {
+        console.error('GPS error:', error);
+        setState(prev => ({
+          ...prev,
+          error: 'GPS tracking failed',
+        }));
+      },
+      {
+        enableHighAccuracy: true,
+        distanceFilter: 5, // Update every 5 meters
+        interval: 1000, // Update every second
+        fastestInterval: 500,
+      },
+    );
+
+    watchIdRef.current = watchId;
+
+    return () => {
+      if (watchIdRef.current !== null) {
+        Geolocation.clearWatch(watchIdRef.current);
+      }
+    };
+  }, [state.isNavigating]);
+
+  /**
+   * Update navigation state when location or route changes
+   */
+  useEffect(() => {
+    if (!state.currentLocation || !state.route || !state.isNavigating) return;
+
+    const currentStep = state.route.legs[0].steps[state.currentStepIndex];
+    if (!currentStep) return;
+
+    // Calculate distance to next maneuver
+    const maneuverLocation: Coordinate = {
+      longitude: currentStep.maneuver.location[0],
+      latitude: currentStep.maneuver.location[1],
+    };
+
+    const distanceToManeuver = calculateDistance(
+      state.currentLocation,
+      maneuverLocation,
+    );
+
+    // Get lane guidance for this step
+    const laneGuidance = osrmService.getLaneGuidance(
+      currentStep,
+      distanceToManeuver,
+    );
+
+    // Calculate total remaining distance and time
+    let totalDistance = 0;
+    let totalTime = 0;
+    for (let i = state.currentStepIndex; i < state.route.legs[0].steps.length; i++) {
+      const step = state.route.legs[0].steps[i];
+      totalDistance += step.distance;
+      totalTime += step.duration;
+    }
+
+    setState(prev => ({
+      ...prev,
+      currentStep,
+      distanceToNextManeuver: distanceToManeuver,
+      totalDistanceRemaining: totalDistance,
+      totalTimeRemaining: totalTime,
+      lanes: laneGuidance,
+    }));
+
+    // Auto-advance to next step when close to current maneuver
+    if (distanceToManeuver < 20 && state.currentStepIndex < state.route.legs[0].steps.length - 1) {
+      setState(prev => ({
+        ...prev,
+        currentStepIndex: prev.currentStepIndex + 1,
+      }));
+    }
+  }, [state.currentLocation, state.route, state.currentStepIndex, state.isNavigating]);
 
   /**
    * Start navigation to destination
    */
-  const startNavigation = useCallback(
-    async (destination: {lat: number; lng: number}) => {
-      if (!state.currentLocation) {
-        setState(prev => ({
-          ...prev,
-          error: 'Current location not available',
-        }));
-        return;
+  const startNavigation = async (destination: Coordinate) => {
+    try {
+      setState(prev => ({...prev, error: null}));
+
+      // Get current location first
+      const position = await new Promise<GeolocationPosition>(
+        (resolve, reject) => {
+          Geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 15000,
+          });
+        },
+      );
+
+      const origin: Coordinate = {
+        latitude: position.coords.latitude,
+        longitude: position.coords.longitude,
+      };
+
+      // Fetch route from OSRM
+      const routeResponse = await osrmService.getRoute(origin, destination);
+
+      if (!routeResponse.routes || routeResponse.routes.length === 0) {
+        throw new Error('No route found');
       }
 
-      try {
-        setState(prev => ({...prev, error: null, destination}));
+      const route = routeResponse.routes[0];
 
-        const request: RouteRequest = {
-          origin: state.currentLocation,
-          destination,
-        };
+      setState(prev => ({
+        ...prev,
+        currentLocation: origin,
+        route,
+        currentStepIndex: 0,
+        currentStep: route.legs[0].steps[0],
+        isNavigating: true,
+      }));
 
-        const route = await hereApiService.getRoute(request);
-        const navigationData = hereApiService.parseRouteToNavigationData(
-          route,
-          0, // Initial speed, will be updated by OBD2
-        );
-
-        setState(prev => ({
-          ...prev,
-          isNavigating: true,
-          navigationData,
-        }));
-      } catch (error) {
-        setState(prev => ({
-          ...prev,
-          error: error instanceof Error ? error.message : 'Navigation failed',
-        }));
-      }
-    },
-    [state.currentLocation],
-  );
+      destinationRef.current = destination;
+    } catch (error) {
+      console.error('Navigation start error:', error);
+      setState(prev => ({
+        ...prev,
+        error: error instanceof Error ? error.message : 'Failed to start navigation',
+      }));
+    }
+  };
 
   /**
    * Stop navigation
    */
-  const stopNavigation = useCallback(() => {
-    setState(prev => ({
-      ...prev,
+  const stopNavigation = () => {
+    if (watchIdRef.current !== null) {
+      Geolocation.clearWatch(watchIdRef.current);
+      watchIdRef.current = null;
+    }
+
+    setState({
+      currentLocation: null,
+      currentSpeed: 0,
+      route: null,
+      currentStepIndex: 0,
+      currentStep: null,
+      distanceToNextManeuver: 0,
+      totalDistanceRemaining: 0,
+      totalTimeRemaining: 0,
+      lanes: null,
       isNavigating: false,
-      navigationData: null,
-      destination: null,
-    }));
-  }, []);
+      error: null,
+    });
+
+    destinationRef.current = null;
+  };
 
   /**
-   * Update current speed (from OBD2)
+   * Recalculate route from current location
    */
-  const updateCurrentSpeed = useCallback((speed: number) => {
-    setState(prev => ({
-      ...prev,
-      navigationData: prev.navigationData
-        ? {...prev.navigationData, currentSpeed: speed}
-        : null,
-    }));
-  }, []);
+  const recalculateRoute = async () => {
+    if (!destinationRef.current || !state.currentLocation) return;
 
-  /**
-   * Update current location (from GPS)
-   */
-  const updateLocation = useCallback(
-    (location: {lat: number; lng: number}) => {
-      setState(prev => ({...prev, currentLocation: location}));
+    try {
+      const routeResponse = await osrmService.getRoute(
+        state.currentLocation,
+        destinationRef.current,
+      );
 
-      // If navigating, recalculate route if user deviated significantly
-      // TODO: Implement route recalculation logic
-    },
-    [],
-  );
+      if (!routeResponse.routes || routeResponse.routes.length === 0) {
+        throw new Error('No route found');
+      }
+
+      const route = routeResponse.routes[0];
+
+      setState(prev => ({
+        ...prev,
+        route,
+        currentStepIndex: 0,
+        currentStep: route.legs[0].steps[0],
+      }));
+    } catch (error) {
+      console.error('Route recalculation error:', error);
+      setState(prev => ({
+        ...prev,
+        error: 'Failed to recalculate route',
+      }));
+    }
+  };
 
   return {
     ...state,
     startNavigation,
     stopNavigation,
-    updateCurrentSpeed,
-    updateLocation,
+    recalculateRoute,
   };
 }

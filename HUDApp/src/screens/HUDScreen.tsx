@@ -1,32 +1,69 @@
-import React, {useState, useEffect} from 'react';
-import {View, StyleSheet, StatusBar} from 'react-native';
+import React, {useEffect} from 'react';
+import {View, StyleSheet, StatusBar, Text} from 'react-native';
 import {SpeedDisplay} from '../components/SpeedDisplay';
 import {TurnInfo} from '../components/TurnInfo';
 import {TimeRemaining} from '../components/TimeRemaining';
 import {LaneGuidance} from '../components/LaneGuidance';
-import {NavigationData} from '../types/navigation';
+import {useNavigation, mapManeuverToDirection} from '../hooks/useNavigation';
+import {NAVIGATION_CONFIG} from '../config/navigation.config';
 
 export const HUDScreen: React.FC = () => {
-  // Mock data for testing - will be replaced with real data from navigation API and OBD2
-  const [navData, setNavData] = useState<NavigationData>({
-    currentSpeed: 72,
-    speedLimit: 80,
-    nextTurnDirection: 'left',
-    nextTurnDistance: 120,
-    nextTurnStreetName: 'Sheikh Zayed Road',
-    timeRemaining: 25,
-    lanes: [
-      {directions: ['left'], active: true},
-      {directions: ['straight'], active: false},
-      {directions: ['straight'], active: false},
-      {directions: ['straight'], active: false},
-      {directions: ['right'], active: false},
-    ],
-  });
+  const navigation = useNavigation();
 
-  const isOverSpeedLimit =
-    navData.speedLimit !== undefined &&
-    navData.currentSpeed > navData.speedLimit;
+  // Auto-start navigation to test destination on mount
+  useEffect(() => {
+    // Dubai Mall coordinates for testing
+    const testDestination = {
+      latitude: 25.1972,
+      longitude: 55.2744,
+    };
+
+    // Start navigation after 2 seconds (give time for GPS)
+    const timer = setTimeout(() => {
+      navigation.startNavigation(testDestination);
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Calculate speed limit (placeholder - will be from OSRM or separate API later)
+  const speedLimit = 80; // TODO: Get from OSRM tags or speed limit API
+
+  const isOverSpeedLimit = navigation.currentSpeed > speedLimit;
+
+  // Show error or loading state
+  if (navigation.error) {
+    return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Error: {navigation.error}</Text>
+          <Text style={styles.errorSubtext}>Check GPS and OSRM server</Text>
+        </View>
+      </View>
+    );
+  }
+
+  if (!navigation.isNavigating || !navigation.currentStep) {
+    return (
+      <View style={styles.container}>
+        <StatusBar hidden />
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>Starting navigation...</Text>
+          <Text style={styles.loadingSubtext}>Getting GPS location</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Extract turn info from current step
+  const turnDirection = mapManeuverToDirection(
+    navigation.currentStep.maneuver.type,
+    navigation.currentStep.maneuver.modifier,
+  );
+
+  const streetName = navigation.currentStep.name || 'Unknown Road';
+  const timeRemainingMinutes = Math.ceil(navigation.totalTimeRemaining / 60);
 
   return (
     <View style={styles.container}>
@@ -37,8 +74,8 @@ export const HUDScreen: React.FC = () => {
         {/* Top Left - Speed (1/3 width) */}
         <View style={styles.leftColumn}>
           <SpeedDisplay
-            speed={navData.currentSpeed}
-            speedLimit={navData.speedLimit}
+            speed={navigation.currentSpeed}
+            speedLimit={speedLimit}
             isOverLimit={isOverSpeedLimit}
           />
         </View>
@@ -49,9 +86,9 @@ export const HUDScreen: React.FC = () => {
         {/* Top Right - Turn Info (2/3 width) */}
         <View style={styles.rightColumn}>
           <TurnInfo
-            direction={navData.nextTurnDirection}
-            distance={navData.nextTurnDistance}
-            streetName={navData.nextTurnStreetName}
+            direction={turnDirection}
+            distance={navigation.distanceToNextManeuver}
+            streetName={streetName}
           />
         </View>
       </View>
@@ -63,7 +100,7 @@ export const HUDScreen: React.FC = () => {
       <View style={styles.bottomRow}>
         {/* Bottom Left - Time Remaining (1/3 width) */}
         <View style={styles.leftColumn}>
-          <TimeRemaining minutes={navData.timeRemaining} />
+          <TimeRemaining minutes={timeRemainingMinutes} />
         </View>
 
         {/* Vertical Divider */}
@@ -71,7 +108,16 @@ export const HUDScreen: React.FC = () => {
 
         {/* Bottom Right - Lane Guidance (2/3 width) */}
         <View style={styles.rightColumn}>
-          <LaneGuidance lanes={navData.lanes} />
+          {navigation.lanes ? (
+            <LaneGuidance
+              lanes={navigation.lanes}
+              distanceToManeuver={navigation.distanceToNextManeuver}
+            />
+          ) : (
+            <View style={styles.noLanes}>
+              <Text style={styles.noLanesText}>No lane data</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>
@@ -104,5 +150,46 @@ const styles = StyleSheet.create({
   verticalDivider: {
     width: 1,
     backgroundColor: '#333333',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    color: '#FFA500',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  errorSubtext: {
+    color: '#888',
+    fontSize: 16,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  loadingText: {
+    color: '#FFF',
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 10,
+  },
+  loadingSubtext: {
+    color: '#888',
+    fontSize: 16,
+  },
+  noLanes: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  noLanesText: {
+    color: '#666',
+    fontSize: 18,
   },
 });
